@@ -363,7 +363,7 @@ async function brainCall(system, user, maxTokens){
         "Content-Type": "application/json",
         "Authorization": "Bearer " + API.key
       },
-      body: JSON.stringify({
+      body: JSON.stringify(Object.assign({
         model: apiModelName(),
         messages: [
           { role:"system", content: system },
@@ -371,7 +371,7 @@ async function brainCall(system, user, maxTokens){
         ],
         temperature: 1.0,
         max_tokens: maxTokens || 4096
-      })
+      }, API.provider === "glm" ? { thinking: { type: "disabled" } } : {}))
     });
     if (!r.ok){
       let t = "HTTP " + r.status;
@@ -379,9 +379,10 @@ async function brainCall(system, user, maxTokens){
       throw new Error(t);
     }
     const j = await r.json();
-    const txt = j.choices && j.choices[0] && j.choices[0].message && j.choices[0].message.content;
-    if (!txt) throw new Error("пустой ответ модели");
-    return txt;
+    const msg = j.choices && j.choices[0] && j.choices[0].message;
+    const txt = (msg && msg.content) || (msg && msg.reasoning_content);
+    if (!txt || !String(txt).trim()) throw new Error("пустой ответ модели");
+    return String(txt);
   } finally { clearTimeout(to); }
 }
 
