@@ -337,7 +337,7 @@ const PROVIDERS = {
   deepseek:   { label:"DeepSeek (копейки)",     url:"https://api.deepseek.com/chat/completions",       model:"deepseek-chat" },
   openrouter: { label:"OpenRouter (любые)",     url:"https://openrouter.ai/api/v1/chat/completions",   model:"deepseek/deepseek-chat" },
   openai:     { label:"OpenAI",                 url:"https://api.openai.com/v1/chat/completions",       model:"gpt-4o-mini" }, 
-  glm: { label:"GLM 5.3", url:"https://open.bigmodel.cn/api/paas/v4/chat/completions", model:"glm-5.3" }
+    glm:        { label:"GLM 5.3", url:"https://jbgen-proxy.vercel.app/api/chat", model:"glm-5.3" }
 };
 const API_KEY_STORE = "jbgen_api_v1";
 let API = { provider:"groq", key:"", model:"" };
