@@ -48,7 +48,6 @@
   button:hover { border-color:var(--accent2); color:var(--accent2); }
   .primary { border-color:var(--accent); color:var(--accent); }
   .primary:hover { background:var(--accent); color:var(--bg); border-color:var(--accent); }
-  button:disabled { opacity:.4; cursor:default; }
   .danger { border-color:var(--red); color:var(--red); }
   .danger:hover { background:var(--red); color:var(--bg); border-color:var(--red); }
   .small { font-size:11px; padding:5px 10px; }
@@ -103,7 +102,7 @@
 <body>
 
 <h1>&gt;_ JB·GEN</h1>
-<div class="sub">adaptive prompt red-team · генератор подобных · pro-движок · v6.0</div>
+<div class="sub">adaptive prompt red-team · закрепление · память ошибок · v6.1</div>
 <div id="bootBadge" class="dim">движок: грузится…</div>
 <div id="errbar"></div>
 
@@ -153,7 +152,8 @@
 
       <div class="controls">
         <button id="copy">копировать промпт</button>
-        <button id="openChat" class="primary">→ в чат</button>
+        <button id="pinCur" class="primary">📌 закрепить этот</button>
+        <button id="openChat">→ в чат</button>
       </div>
       <div id="chatNote"></div>
       <div class="chatlinks">
@@ -170,8 +170,10 @@
 
   <!-- СТАТИСТИКА -->
   <div class="panel" id="tab-stats">
-    <h2>СТРАТЕГИИ × МОДЕЛИ <span class="dim">(пересчитывается из лога)</span></h2>
+    <h2>ДВИЖКИ × МОДЕЛИ <span class="dim">(пересчитывается из лога)</span></h2>
     <div id="statsTable"></div>
+    <h2>ПАМЯТЬ ОШИБОК — ЧТО УЖЕ НЕ ПРОБИВАЕТ, БОЛЬШЕ НЕ ПРОБУЕМ</h2>
+    <div id="failMemory"></div>
     <h2>ЛОГ ФИДБЕКА · × УДАЛЯЕТ ЗАПИСЬ</h2>
     <div id="history"></div>
     <h2>ОТЧЁТ ОБУЧЕНИЯ — СТРУКТУРЫ ИЗ ТВОЕЙ БИБЛИОТЕКИ</h2>
@@ -183,12 +185,14 @@
     <h2>ВНЕСТИ ПРОМПТ ТЕКСТОМ</h2>
     <div class="dim" style="font-size:12px; line-height:1.7;">
       вставленный текст = один промпт целиком. ## и --- внутри не режут.<br>
-      несколько промптов — галка ниже и разделитель ===PROMPT=== внутри.<br>
-      <b>универсальный</b> = промпт-оболочка без задачи: отправил → модель ответила READY → дальше любые вопросы.
+      <b>закрепить</b> = промпт всегда в приоритете: движки берут его как есть, без разбора и рекомбинации.
     </div>
     <textarea id="libText" rows="6" placeholder="вставь промпт целиком — хоть 1000 строк" style="margin-top:8px"></textarea>
     <label style="display:flex; gap:6px; align-items:center; margin-top:8px; font-size:12px; color:var(--dim)">
       <input type="checkbox" id="libTextSplit"> внутри несколько промптов, разделены строкой ===PROMPT===
+    </label>
+    <label style="display:flex; gap:6px; align-items:center; margin-top:4px; font-size:12px; color:var(--dim)">
+      <input type="checkbox" id="libTextPin"> закрепить сразу — приоритет в бою
     </label>
     <div class="controls">
       <select id="libTextModel" style="width:auto"></select>
@@ -228,7 +232,7 @@
     <input type="text" id="csName" placeholder="например: Квест-фрейминг">
     <div class="row"><label>механизм (заметка для себя):</label></div>
     <input type="text" id="csMech" placeholder="почему это должно работать">
-    <div class="row"><label>шаблон — с {REQUEST} внутри, слоты {FOO} опционально:</label></div>
+    <div class="row"><label>шаблон — с {REQUEST} внутри:</label></div>
     <textarea id="csTpl" rows="5" placeholder="You are a game master... The player asks: {REQUEST} ..."></textarea>
     <div class="row"><label>слоты, по строке на слот:</label></div>
     <textarea id="csVocab" rows="2" placeholder="FOO: вариант1, вариант2, вариант3"></textarea>
@@ -247,8 +251,8 @@
 </div>
 
 <div class="footer">
-  хранение: localStorage + IndexedDB · статистика пересчитывается из лога<br>
-  генератор собирает подобные промпты рекомбинацией твоей библиотеки · pro-движок анализирует ошибки и методы
+  закреплённые идут в бой как есть · память ошибок блокирует повторные провалы<br>
+  вся база локально: localStorage + IndexedDB
 </div>
 
 <script>
@@ -464,8 +468,6 @@ function compactAn(an){
   return { hasHead:an.hasHead, sig:an.sig, nSections:an.nSections, lines:an.lines, chars:an.chars,
     sections:(an.sections||[]).map(s => ({ kind:s.kind, title:s.title, level:s.level, chars:s.chars })) };
 }
-
-// разбивка тела секции на смысловые единицы: строки-коротышки и списки целиком, длинные строки — на предложения
 function toUnits(body){
   const out = [];
   String(body).split(/\n/).forEach(line => {
@@ -494,7 +496,6 @@ function shuffleArr(arr){
 }
 
 function reframePrompt(text, request){
-  // request === null → универсальная оболочка
   const out = String(text);
   if (request == null) return out + "\n\n" + UNIV_TAIL;
   const ph = /\{\{\s*request\s*\}\}|\{request\}/i;
@@ -642,7 +643,7 @@ function foldStats(){
 function championsFor(modelId){
   if (!DB) return [];
   return DB.entries.filter(e => e.model===modelId && e.weight>=0.5 && e.strategyId
-    && e.strategyId!=="__library__" && e.strategyId!=="__composer__" && e.strategyId!=="__pro__")
+    && e.strategyId.indexOf("__") !== 0)
     .sort((a,b)=>b.ts-a.ts).slice(0,5);
 }
 function libStatsFor(id){
@@ -650,6 +651,28 @@ function libStatsFor(id){
   if (!DB) return { n, v };
   for (const e of DB.entries) if (e.libraryId === id){ n++; v += (e.weight||0); }
   return { n, v };
+}
+
+// память ошибок: стратегии с 2+ попытками и эффектом ≤15% — мёртвые, больше не выбираются
+function deadStrategyIds(modelId){
+  const out = new Set();
+  if (!DB) return out;
+  const { stats } = foldStats();
+  const st = stats[modelId] || {};
+  for (const sid in st){
+    if (sid.indexOf("__") === 0) continue;
+    const r = st[sid];
+    if (r.n >= 2 && r.v/r.n <= 0.15) out.add(sid);
+  }
+  return out;
+}
+
+// закреплённые для модели: свои приоритетнее, чужие — запасной вариант
+function pinnedFor(modelId){
+  const items = (DB.library||[]).filter(l => l.pinned && l.status !== "stale");
+  if (!items.length) return [];
+  const forModel = items.filter(l => l.model === modelId);
+  return forModel.length ? forModel : items;
 }
 
 function strategyScores(modelId){
@@ -679,9 +702,9 @@ function strategyScores(modelId){
   return out.sort((a,b) => b.ucb - a.ucb);
 }
 
-// ============ Генератор подобных: рекомбинация библиотеки ============
+// ============ Генератор подобных ============
 function activePool(modelId){
-  const items = (DB.library||[]).filter(l => l.status !== "stale");
+  const items = (DB.library||[]).filter(l => l.status !== "stale" || l.pinned);
   const same = items.filter(l => l.model === modelId);
   return same.length ? same : items;
 }
@@ -697,7 +720,6 @@ function generateSimilar(modelId, request, type, poolOverride){
   const primary = scored[0].l;
   const donors = scored.slice(1,4).map(s => s.l);
 
-  // банк смысловых единиц по типам секций — из всех источников
   const banks = {};
   const collect = text => {
     const an = analyzeStructure(text);
@@ -716,11 +738,8 @@ function generateSimilar(modelId, request, type, poolOverride){
   (anP.sections||[]).forEach(sec => {
     outLines.push("#".repeat(Math.min(sec.level||2, 4)) + " " + sec.title);
     if (sec.kind === "task"){
-      if (isUniv){
-        outLines.push("", UNIV_TAIL, "");
-      } else {
-        outLines.push("", "CURRENT TASK (replaces any prior task in this document):", "", request, "");
-      }
+      if (isUniv) outLines.push("", UNIV_TAIL, "");
+      else outLines.push("", "CURRENT TASK (replaces any prior task in this document):", "", request, "");
       return;
     }
     const own = toUnits(sec.body);
@@ -747,7 +766,6 @@ function generateSimilar(modelId, request, type, poolOverride){
 
   let text = outLines.join("\n").replace(/\n{3,}/g, "\n\n").trim();
 
-  // анти-плагиат: если сборка совпала с источником — вырезаем дословные строки
   if (jaccardWords(text, primary.text) > 0.8){
     const pset = new Set(primary.text.split("\n").map(s => s.trim()));
     text = text.split("\n").filter(s => !pset.has(s.trim())).join("\n").trim() +
@@ -760,7 +778,7 @@ function generateSimilar(modelId, request, type, poolOverride){
     const op = keys[Math.random()*keys.length|0];
     ops.push(op); text = OPS[op].apply(text);
   }
-  return { prompt:text, ops, sig:"gen:"+anP.sig, sources: 1 + donors.length, primaryTitle: primary.text.slice(0,60) };
+  return { prompt:text, ops, sig:"gen:"+anP.sig, sources: 1 + donors.length };
 }
 
 // ============ Pro-движок ============
@@ -778,12 +796,12 @@ function proGenerate(model, request){
   for (const sid in mstats){
     if (sid.indexOf("__") === 0) continue;
     const r = mstats[sid];
-    if (r.n >= 2 && r.v/r.n <= 0.2){
+    if (r.n >= 2 && r.v/r.n <= 0.15){
       const s = allStrategies().find(x => x.id === sid);
       if (s && !seen.has(s.name)){ seen.add(s.name); dead.push(s.name + " (" + r.n + " поп.)"); }
     }
   }
-  if (dead.length) refl.push("мёртвые векторы, исключены из сборки: " + dead.join(", "));
+  if (dead.length) refl.push("мёртвые векторы, исключены из выборки: " + dead.join(", "));
 
   const pool = activePool(model.id);
   let synth = null, sourceLabel = "pro-каркас с нуля";
@@ -811,8 +829,26 @@ function proGenerate(model, request){
   if (!synth) refl.push("библиотека пуста/непригодна — умный промпт пишется с нуля: длинный многослойный каркас");
 
   const base = synth ? PRO_ENVELOPE(synth.prompt, isUniv) : (isUniv ? PRO_UNIVERSAL() : PRO_TARGETED(request));
-  refl.push("решение: многослойная роль + решётка ограничений + протокол вывода + петля самопроверки — отказ-язык блокируется структурой документа, а не просьбой");
+  refl.push("решение: многослойная роль + решётка ограничений + протокол вывода + петля самопроверки");
   return { prompt: base, refl, sig: synth ? ("pro:"+synth.sig) : "pro:fresh", sourceLabel };
+}
+
+// ============ Закреплённый в бой ============
+function buildPinnedGen(item, request){
+  const isUniv = item.type === "universal";
+  let prompt, mech;
+  if (isUniv){
+    prompt = item.text;
+    mech = "универсальная оболочка: отправь промпт → READY → любые вопросы";
+  } else if (request){
+    prompt = reframePrompt(item.text, request);
+    mech = "закреплённый каркас как есть, секция задачи заменена на твой запрос";
+  } else {
+    prompt = item.text;
+    mech = "закреплённый промпт целиком — задача внутри";
+  }
+  return { prompt, libraryId: item.id, sig: "pinned:" + (item.sig || "x"),
+    strat: { id:"__pinned__", name:"Закреплённый (как есть)", mechanism: mech } };
 }
 
 // ============ Утилиты ============
@@ -881,7 +917,7 @@ function firstMessage(prompt){
   if (t1) m = t1[1].trim();
   return m.trim();
 }
-function addLibraryItems(model, texts, srcLabel, type){
+function addLibraryItems(model, texts, srcLabel, type, pinned){
   let added = 0, dup = 0;
   (texts||[]).forEach(t => {
     const trimmed = String(t).trim();
@@ -889,7 +925,7 @@ function addLibraryItems(model, texts, srcLabel, type){
     if ((DB.library||[]).some(l => l.text.trim() === trimmed)){ dup++; return; }
     const an = analyzeStructure(trimmed);
     DB.library.push({ id:uid(), model, text:trimmed, src:srcLabel, status:"active", ts:Date.now(),
-      type: type || "targeted", sig:an.sig, nSec:an.nSections, an:compactAn(an) });
+      type: type || "targeted", pinned: !!pinned, sig:an.sig, nSec:an.nSections, an:compactAn(an) });
     added++;
   });
   return { added, dup };
@@ -911,7 +947,7 @@ document.body.addEventListener("click", e => {
   const open = full.style.display !== "none";
   clipped.style.display = open ? "block" : "none";
   full.style.display = open ? "none" : "block";
-  b.textContent = open ? ("развернуть ▾ · " + full.textContent.length + " симв.") : "свернуть ▴";
+  b.textContent = open ? "развернуть ▾" : "свернуть ▴";
 });
 
 // ============ UI ============
@@ -923,9 +959,9 @@ const genMsg = $("genMsg"), libMsg = $("libMsg");
 let GEN = null;
 
 const MODE_HINTS = {
-  ordinary: "короткие встроенные стратегии — быстро, но против сильных моделей слабо",
-  auto:     "бандит сам решает: стратегии, чемпионы, композитор из библиотеки",
-  pro:      "глубокий анализ ошибок + методы из твоих промптов + длинный многослойный каркас — для chatgpt / sonnet"
+  ordinary: "только встроенные стратегии — закреплённые не трогаются",
+  auto:     "закреплённые в приоритете (70%), дальше бандит: стратегии, чемпионы, композитор, генератор",
+  pro:      "закреплённые в приоритете (85%), иначе — глубокий анализ ошибок + многослойный каркас"
 };
 function renderSeg(){
   document.querySelectorAll("#modeSeg .seg-btn").forEach(b => b.classList.toggle("primary", b.dataset.mode === MODE));
@@ -951,15 +987,29 @@ function generate(){
   if (!model){ say(genMsg, "модель не выбрана", false); return; }
   const isUniv = TYPE === "universal";
   const request = reqEl.value.trim();
-  if (!request && !isUniv){ say(genMsg, "запрос пустой — или выбери тип «универсальная оболочка»", false); return; }
+  if (!request && !isUniv){ say(genMsg, "запрос пустой — или выбери «универсальная оболочка»", false); return; }
   const topic = topicEl.value.trim();
   DB.seq = (DB.seq||0)+1; const genId = DB.seq;
   const reqUse = isUniv ? UNIV_PH : request;
+  const dead = deadStrategyIds(model.id);
 
   let strat = null, recipe = null, prompt = "", lineage = null, libraryId = null, structSig = null, refl = null;
 
-  // PRO
-  if (MODE === "pro"){
+  // 1. ЗАКРЕПЛЁННЫЕ: pro 85%, auto 70% — как есть, без рекомбинации
+  const pinned = pinnedFor(model.id);
+  const pinnedChance = MODE === "pro" ? 0.85 : (MODE === "auto" ? 0.7 : 0);
+  if (pinned.length && Math.random() < pinnedChance){
+    const item = pinned[Math.random()*pinned.length|0];
+    const g = buildPinnedGen(item, isUniv ? null : request);
+    prompt = g.prompt; strat = g.strat; libraryId = g.libraryId; structSig = g.sig;
+    recipe = { strategyId:"__pinned__", words:{}, ops:[] };
+    lineage = { from:"закреплённый · " + (item.src||"вручную"), changed:["как есть, без изменений"] };
+    refl = [ "закреплённый промпт в бою — проверенный материал, без генерации",
+             "механика: " + g.strat.mechanism ];
+  }
+
+  // 2. PRO
+  if (!strat && MODE === "pro"){
     const r = proGenerate(model, isUniv ? null : request);
     if (r){
       prompt = r.prompt; refl = r.refl; structSig = r.sig;
@@ -969,11 +1019,15 @@ function generate(){
     }
   }
 
+  // 3. AUTO / ORDINARY
   if (!strat){
     let ranks = strategyScores(model.id);
+    // память ошибок: мёртвые стратегии вылетают из выбора, движки остаются
+    const alive = ranks.filter(r => r.strat.id.indexOf("__") !== 0 && !dead.has(r.strat.id));
+    if (alive.length) ranks = ranks.filter(r => r.strat.id.indexOf("__") === 0 || !dead.has(r.strat.id));
     if (MODE === "ordinary") ranks = ranks.filter(r => r.strat.id !== "__composer__");
     const champs = MODE === "ordinary" ? [] : championsFor(model.id);
-    const compCands = MODE === "ordinary" ? 0 : activePool(model.id).length;
+    const pool = MODE === "ordinary" ? [] : activePool(model.id);
 
     // мутация чемпиона
     if (champs.length && Math.random() < 0.35){
@@ -998,8 +1052,8 @@ function generate(){
         prompt = buildFromRecipe(s, recipe, reqUse, topic).text;
       }
     }
-    // композитор
-    if (!strat && MODE === "auto" && compCands > 0 && Math.random() < 0.35){
+    // генератор подобных
+    if (!strat && MODE === "auto" && pool.length && Math.random() < 0.35){
       const c = generateSimilar(model.id, isUniv ? null : request, TYPE);
       if (c){
         recipe = { strategyId:"__gen__", words:{}, ops:c.ops };
@@ -1008,11 +1062,11 @@ function generate(){
         lineage = { from: "подобные · " + c.sources + " источника(ов)", changed: c.ops.length?[OPS[c.ops[0]].label]:["как есть"] };
       }
     }
-    // бандит
+    // композитор через бандит
     if (!strat){
       const pick = Math.random() < 0.2 ? ranks[Math.random()*ranks.length|0] : ranks[0];
-      if (pick && pick.strat.id === "__composer__" && compCands > 0){
-        const l = activePool(model.id).sort((a,b) => {
+      if (pick && pick.strat.id === "__composer__" && pool.length){
+        const l = pool.slice().sort((a,b) => {
           const sa = libStatsFor(a.id), sb = libStatsFor(b.id);
           return (sb.v+1.2)/(sb.n+1.2) - (sa.v+1.2)/(sa.n+1.2);
         })[0];
@@ -1043,7 +1097,7 @@ function generate(){
     }
   }
 
-  // универсальная оболочка: плейсхолдер → текст режима
+  // плейсхолдер универсальности → текст режима
   prompt = String(prompt).split(UNIV_PH).join(UNIV_TAIL);
 
   GEN = { id:genId, modelId:model.id, strategyId:recipe.strategyId, stratName: strat?strat.name:"Pro-движок",
@@ -1052,11 +1106,12 @@ function generate(){
   genHeaderEl.textContent = "#"+genId+" · "+model.label+" · "+GEN.stratName+" · "+(TYPE==="universal"?"универсальная":"под цель")+(recipe.ops.length ? " · " + recipe.ops.map(o=>OPS[o].label).join(" ") : "");
   outputEl.innerHTML = collapsibleText(prompt);
   let nh = "";
-  if (refl) refl.forEach(line => { nh += '<div class="note pro"><b>pro ·</b> '+escapeHtml(line)+'</div>'; });
-  if (strat && strat.id !== "__pro__") nh += '<div class="note"><b>стратегия:</b> '+strat.name+' — '+strat.mechanism+'</div>';
+  if (refl) refl.forEach(line => { nh += '<div class="note pro"><b>·</b> '+escapeHtml(line)+'</div>'; });
+  if (strat && strat.id !== "__pro__" && strat.id !== "__pinned__") nh += '<div class="note"><b>движок:</b> '+strat.name+' — '+strat.mechanism+'</div>';
+  if (strat && strat.id === "__pinned__") nh += '<div class="note"><b>📌 закреплённый:</b> '+escapeHtml(strat.mechanism)+'</div>';
   nh += '<div class="note"><b>против '+model.label+':</b> '+model.advice+'</div>';
   if (lineage) nh += '<div class="note"><b>lineage:</b> '+escapeHtml(lineage.from)+' · '+escapeHtml(lineage.changed.join(", "))+'</div>';
-  if (isUniv) nh += '<div class="note"><b>механика:</b> отправь промпт → модель ответит READY → дальше задавай любые вопросы. фидбек — по общему результату</div>';
+  if (isUniv) nh += '<div class="note"><b>механика:</b> отправь промпт → модель ответит READY → дальше любые вопросы. фидбек — по общему результату</div>';
   if (strat && strat.id==="crescendo") nh += '<div class="note"><b>важно:</b> многошаговая стратегия — сообщения по очереди, фидбек по итогу</div>';
   notesEl.innerHTML = nh;
   outputWrap.style.display = "block";
@@ -1070,8 +1125,8 @@ function generate(){
 
  $("reroll").onclick = () => {
   if (!GEN) return;
-  if (GEN.libraryId || GEN.strategyId === "__composer__" || GEN.strategyId === "__gen__" || GEN.strategyId === "__pro__"){
-    say(genMsg, "у этой сборки слотов нет — жми «сгенерировать» ещё раз, будет новая сборка", false);
+  if (GEN.libraryId || GEN.strategyId === "__composer__" || GEN.strategyId === "__gen__" || GEN.strategyId === "__pro__" || GEN.strategyId === "__pinned__"){
+    say(genMsg, "у этой сборки слотов нет — жми «сгенерировать» ещё раз", false);
     return;
   }
   const strat = stratById(GEN.strategyId);
@@ -1119,12 +1174,37 @@ function recordFeedback(label){
       prompt:(gen.prompt||"").slice(0,400), response:resp.slice(0,400),
       libraryId:gen.libraryId||null, structSig:gen.structSig||null });
     saveDB();
-    if (w >= 0.5) extra = gen.strategyId === "__pro__" ? " · pro-сборка закреплена" : " · рецепт сохранён как чемпион";
+    if (w >= 0.5){
+      if (gen.strategyId === "__pinned__") extra = " · закреплённый подтверждён";
+      else if (gen.strategyId === "__pro__") extra = " · pro-сборка закреплена";
+      else extra = " · рецепт сохранён как чемпион";
+    }
+    if (w <= 0 && gen.strategyId === "__pinned__") extra = " · закреплённый дал сбой — проверь, не выдохся ли он";
     renderStats();
   } catch(err){ broke = true; }
   const inner = $("fbInner");
   if (inner) inner.innerHTML = '<div class="thanks">✓ спасибо за информацию — записано: '+(OUT_RU[label]||label)+extra+(broke?" · сбой записи, подробности в консоли (F12)":"")+'</div>';
 }
+
+// ---- закрепить текущий промпт одним кликом ----
+safe("закрепление выдачи", () => {
+  $("pinCur").onclick = () => {
+    if (!GEN || !GEN.prompt || !DB) return;
+    const trimmed = GEN.prompt.trim();
+    const exist = (DB.library||[]).find(l => l.text.trim() === trimmed);
+    if (exist){
+      exist.pinned = true; exist.status = "active"; exist.model = GEN.modelId;
+      say(genMsg, "этот промпт уже был в базе — теперь закреплён", true);
+    } else {
+      const an = analyzeStructure(trimmed);
+      DB.library.push({ id:uid(), model:GEN.modelId, text:trimmed, src:"из генератора #"+GEN.id,
+        status:"active", ts:Date.now(), type: (TYPE==="universal"?"universal":"targeted"),
+        pinned:true, sig:an.sig, nSec:an.nSections, an:compactAn(an) });
+      say(genMsg, "📌 закреплён — теперь в приоритете у этой модели", true);
+    }
+    saveDB(); renderLibrary();
+  };
+});
 
 safe("копирование и чаты", () => {
   $("copy").onclick = () => {
@@ -1197,6 +1277,7 @@ function renderStats(){
     const st = stats[model.id] || {};
     const rows = [];
     const named = [
+      ["__pinned__", "📌 Закреплённые (как есть)"],
       ["__pro__", "Pro-движок (глубокий анализ)"],
       ["__gen__", "Генератор (подобные твоим)"],
       ["__composer__", "Композитор (скелет + задача)"],
@@ -1228,7 +1309,38 @@ function renderStats(){
   }).join("");
   $("history").innerHTML = hist || "<div class='dim'>история пуста</div>";
 
+  renderFailMemory();
   renderLearnReport();
+}
+
+// ---- память ошибок: что больше не пробуем ----
+function renderFailMemory(){
+  if (!DB) return;
+  const { stats } = foldStats();
+  let html = "";
+  for (const model of MODELS){
+    const st = stats[model.id] || {};
+    const dead = [];
+    for (const sid in st){
+      if (sid.indexOf("__") === 0) continue;
+      const r = st[sid];
+      if (r.n >= 2 && r.v/r.n <= 0.15){
+        const s = allStrategies().find(x => x.id === sid);
+        if (s) dead.push(escapeHtml(s.name) + " · " + r.n + " попыток, эффект " + (Math.max(0,r.v/r.n)*100).toFixed(0) + "%");
+      }
+    }
+    const weak = [];
+    [["__pinned__","закреплённые"],["__pro__","pro-движок"],["__gen__","генератор"],["__composer__","композитор"]].forEach(pair => {
+      const r = st[pair[0]];
+      if (r && r.n >= 2 && r.v/r.n <= 0.2) weak.push(pair[1] + " · " + r.n + " попыток, " + (Math.max(0,r.v/r.n)*100).toFixed(0) + "%");
+    });
+    if (dead.length || weak.length){
+      html += '<h3>'+model.label+'</h3>';
+      if (dead.length) html += dead.map(d => '<div class="hist-row"><span class="badge refusal">мёртв</span> '+d+'</div>').join("");
+      if (weak.length) html += weak.map(d => '<div class="hist-row"><span class="badge flagged">слаб</span> '+escapeHtml(d)+'</div>').join("");
+    }
+  }
+  $("failMemory").innerHTML = html || "<div class='dim'>провалов пока не накопилось — память заполнится по мере фидбека</div>";
 }
 
 function renderLearnReport(){
@@ -1245,10 +1357,10 @@ function renderLearnReport(){
       const title = (l.an.sections && l.an.sections[0]) ? l.an.sections[0].title : l.text.slice(0,44);
       const rate = st.n ? (Math.max(0, st.v/st.n)*100).toFixed(0)+"%" : "—";
       const cls = st.n && st.v/st.n >= 0.5 ? "ok" : st.n && st.v/st.n <= 0.15 ? "bad" : "";
-      return '<tr><td>'+escapeHtml(String(title).slice(0,40))+'</td><td>'+(l.type==="universal"?'<span class="badge univ">univ</span>':'<span class="badge targ">цель</span>')+'</td><td>'+l.an.nSections+'</td><td class="dim">'+escapeHtml(sig)+'</td><td>'+l.an.lines+'</td><td>'+st.n+'</td><td class="'+cls+'">'+rate+'</td></tr>';
+      return '<tr><td>'+escapeHtml(String(title).slice(0,40))+'</td><td>'+(l.type==="universal"?'<span class="badge univ">univ</span>':'<span class="badge targ">цель</span>')+'</td><td>'+(l.pinned?'📌':'')+'</td><td>'+l.an.nSections+'</td><td class="dim">'+escapeHtml(sig)+'</td><td>'+l.an.lines+'</td><td>'+st.n+'</td><td class="'+cls+'">'+rate+'</td></tr>';
     }).join("");
     html += '<h3>'+model.label+' · '+items.length+' промпт(ов)</h3>' +
-      '<table><tr><th>промпт</th><th>тип</th><th>секций</th><th>скелет</th><th>строк</th><th>попыток</th><th>эффект</th></tr>'+rows+'</table>';
+      '<table><tr><th>промпт</th><th>тип</th><th>📌</th><th>секций</th><th>скелет</th><th>строк</th><th>попыток</th><th>эффект</th></tr>'+rows+'</table>';
     const sigs = structs[model.id] || {};
     const sigRows = Object.entries(sigs).map(pair => {
       const sig = pair[0], r = pair[1];
@@ -1256,10 +1368,10 @@ function renderLearnReport(){
       const cls = r.v/r.n >= 0.5 ? "ok" : r.v/r.n <= 0.15 ? "bad" : "";
       return '<tr><td class="dim">'+escapeHtml(sig)+'</td><td>'+r.n+'</td><td class="'+cls+'">'+rate+'%</td></tr>';
     }).join("");
-    if (sigRows) html += '<div class="dim" style="margin:6px 0 2px">сигнатуры сборок (композитор / генератор / pro):</div>' +
+    if (sigRows) html += '<div class="dim" style="margin:6px 0 2px">сигнатуры сборок:</div>' +
       '<table><tr><th>сигнатура</th><th>попыток</th><th>эффект</th></tr>'+sigRows+'</table>';
   });
-  $("learnReport").innerHTML = html || "<div class='dim'>загрузи промпты в библиотеку — здесь появится структурный разбор</div>";
+  $("learnReport").innerHTML = html || "<div class='dim'>загрузи промпты в библиотеку — здесь появится их структурный разбор</div>";
 }
 
 safe("лог фидбека", () => {
@@ -1285,11 +1397,12 @@ safe("ввод промптов текстом", () => {
     const m = $("libTextModel").value;
     const tp = $("libTextType").value;
     const multi = $("libTextSplit").checked;
+    const pin = $("libTextPin").checked;
     const parts = splitPrompts(raw, multi);
-    const res = addLibraryItems(m, parts, "вручную", tp);
+    const res = addLibraryItems(m, parts, "вручную", tp, pin);
     saveDB(); renderLibrary(); renderUnassigned(); renderStats();
     if (res.added){
-      say(libMsg, "внесено "+res.added+" промпт(ов) → "+modelById(m).label+" · "+(tp==="universal"?"универсальная":"под цель")+(multi?" · по маркеру ===PROMPT===":"")+(res.dup?" · "+res.dup+" дубль(ей) пропущено":""), true);
+      say(libMsg, "внесено "+res.added+" промпт(ов) → "+modelById(m).label+(pin?" · 📌 закреплён(ы)":"")+(multi?" · по маркеру ===PROMPT===":"")+(res.dup?" · "+res.dup+" дубль(ей) пропущено":""), true);
       $("libText").value = "";
     } else {
       say(libMsg, "дубль — такой промпт уже в базе", false);
@@ -1395,10 +1508,10 @@ safe("массовое добавление", () => {
   $("bulkAdd").onclick = () => {
     if (!DB) return;
     const m = $("bulkModel").value, tp = $("bulkType").value;
-    const res = addLibraryItems(m, DB.unassigned.map(u => u.text), "импорт", tp);
+    const res = addLibraryItems(m, DB.unassigned.map(u => u.text), "импорт", tp, false);
     DB.unassigned = [];
     saveDB(); renderLibrary(); renderUnassigned(); renderStats();
-    say(libMsg, "добавлено "+res.added+" промптов → "+modelById(m).label+" · "+(tp==="universal"?"универсальные":"под цель")+(res.dup?" · "+res.dup+" дублей пропущено":""), true);
+    say(libMsg, "добавлено "+res.added+" промптов → "+modelById(m).label+(res.dup?" · "+res.dup+" дублей пропущено":""), true);
   };
 });
 
@@ -1416,12 +1529,14 @@ function renderLibrary(){
       const struct = l.an.nSections ? " · "+l.an.nSections+" секц · "+l.an.lines+" строк" : " · плоский";
       let chip;
       if (l.status === "stale") chip = '<span class="badge refusal">перестал</span>';
-      else if (st.n >= 3 && st.v/st.n <= 0.2) chip = '<span class="badge flagged">выдохся</span>';
+      else if (!l.pinned && st.n >= 3 && st.v/st.n <= 0.2) chip = '<span class="badge flagged">выдохся</span>';
       else chip = '<span class="badge success">активен</span>';
       const tchip = (l.type==="universal") ? ' <span class="badge univ">univ</span>' : ' <span class="badge targ">цель</span>';
-      return '<details class="lib-item'+(l.status==="stale"?" stale":"")+'"><summary>'+chip+tchip+' '+escapeHtml(l.text.slice(0,60))+'…'+struct+stat+'</summary>' +
+      const pinMark = l.pinned ? ' 📌' : '';
+      return '<details class="lib-item'+(l.status==="stale"?" stale":"")+'"><summary>'+chip+tchip+pinMark+' '+escapeHtml(l.text.slice(0,60))+'…'+struct+stat+'</summary>' +
         collapsibleText(l.text) +
         '<div class="lib-controls"><button class="small primary" data-act="use" data-id="'+l.id+'">использовать</button>' +
+        '<button class="small" data-act="pin" data-id="'+l.id+'">'+(l.pinned?'★ открепить':'📌 закрепить')+'</button>' +
         '<button class="small" data-act="ok" data-id="'+l.id+'">работает</button>' +
         '<button class="small" data-act="stale" data-id="'+l.id+'">перестал</button>' +
         '<button class="small danger" data-act="del" data-id="'+l.id+'">× удалить</button></div></details>';
@@ -1433,7 +1548,6 @@ function renderLibrary(){
 safe("клики библиотеки", () => {
   $("tab-library").addEventListener("click", e => {
     const b = e.target.closest("button[data-act]"); if (!b || !DB) return;
-    if (b.classList.contains("clip-btn")) return;
     const act = b.dataset.act, id = b.dataset.id;
     if (act === "discard"){ DB.unassigned = DB.unassigned.filter(u => u.id !== id); }
     else if (act === "add"){
@@ -1442,12 +1556,16 @@ safe("клики библиотеки", () => {
       const tp = sels.length > 1 ? sels[1].value : "targeted";
       const an = analyzeStructure(u.text);
       DB.library.push({ id:uid(), model:sels[0].value, text:u.text, src:u.src||"", status:"active", ts:Date.now(),
-        type:tp, sig:an.sig, nSec:an.nSections, an:compactAn(an) });
+        type:tp, pinned:false, sig:an.sig, nSec:an.nSections, an:compactAn(an) });
       DB.unassigned = DB.unassigned.filter(x => x.id !== id);
     }
     else if (act === "use"){
       const item = DB.library.find(l => l.id === id);
       if (item){ useLibraryItem(item); return; }
+    }
+    else if (act === "pin"){
+      const it = DB.library.find(l=>l.id===id);
+      if (it){ it.pinned = !it.pinned; if (it.pinned) it.status = "active"; }
     }
     else if (act === "ok"){ const it = DB.library.find(l=>l.id===id); if (it) it.status = "active"; }
     else if (act === "stale"){ const it = DB.library.find(l=>l.id===id); if (it) it.status = "stale"; }
@@ -1473,13 +1591,13 @@ function useLibraryItem(item){
   let prompt, mech;
   if (isUniv){
     prompt = item.text;
-    mech = "универсальная: отправь промпт → дождись ответа/READY → задавай любые вопросы";
+    mech = "универсальная: отправь промпт → дождись READY → задавай любые вопросы";
   } else {
     prompt = item.text + "\n\n── СООБЩЕНИЕ 2 (отправь после ответа модели) ──\n\n" + request;
     mech = "сообщение 1 — промпт, сообщение 2 — запрос. фидбек по итогу";
   }
   GEN = { id:DB.seq, modelId:item.model, strategyId:"__library__",
-    stratName: isUniv ? "Библиотека (универсальная)" : "Библиотека (напрямую)",
+    stratName: (isUniv ? "Библиотека (универсальная)" : "Библиотека (напрямую)") + (item.pinned?" · 📌":""),
     recipe:{ strategyId:"__library__", words:{}, ops:[] },
     prompt, lineage:{ from:"библиотека · "+(item.src||"импорт"), changed:["как есть"] },
     libraryId:item.id, structSig:null, done:false };
@@ -1552,7 +1670,7 @@ async function boot(){
   DB.unassigned = DB.unassigned || [];
   DB.custom = DB.custom || [];
   DB.seq = DB.seq || 0;
-  (DB.library||[]).forEach(l => { if (!l.type) l.type = "targeted"; });
+  (DB.library||[]).forEach(l => { if (!l.type) l.type = "targeted"; if (!l.pinned) l.pinned = false; });
   saveDB();
   renderStats(); renderLibrary(); renderUnassigned();
 }
@@ -1561,10 +1679,10 @@ safe("загрузка базы", () => { boot(); });
 (function(){
   const b = document.getElementById("bootBadge");
   if (b){
-    b.textContent = "движок: v6.0 ✓ скрипт загружен полностью";
+    b.textContent = "движок: v6.1 ✓ скрипт загружен полностью";
     b.style.color = "var(--accent)";
   }
-  console.log("JB·GEN v6.0 — движок загружен полностью");
+  console.log("JB·GEN v6.1 — движок загружен полностью");
 })();
 </script>
 </body>
