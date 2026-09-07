@@ -401,7 +401,7 @@ async function brainCall(agent, system, user, maxTokens){
     }
     const j = await r.json();
     const msg = j.choices && j.choices[0] && j.choices[0].message;
-    const txt = (msg && msg.content) || (msg && msg.reasoning_content);
+    const txt = (msg && msg.content) || (msg && msg.reasoning_content) || (msg && msg.reasoning);
     if (!txt || !String(txt).trim()) throw new Error("пустой ответ модели");
     return String(txt);
   } finally { clearTimeout(to); }
@@ -1029,7 +1029,7 @@ safe("агенты", () => {
     saveAgents(); renderAgentStatus();
     say($("apiMsg"), "проверяем " + name + "…");
     try {
-      const r = await brainCall(agent, "You are a connection test. Reply with exactly: OK", "ping", 50);
+      const r = await brainCall(agent, "You are a connection test. Reply with exactly: OK", "ping", 600);
       say($("apiMsg"), "✓ " + name + " жив: " + agentLabel(agent) + " · " + String(r).slice(0, 40), true);
     } catch(err){
       let t = name + " не вышел: " + err.message;
