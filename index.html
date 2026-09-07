@@ -1159,14 +1159,23 @@ safe("агенты", () => {
       collect(k);
       if (!AGENTS[k].key){ say($("apiMsg"), "ключ " + k + " пустой", false); return; }
       saveAgents();
-      say($("apiMsg"), "проверяем " + k + "…");
+      const ag = AGENTS[k];
+      const keyPreview = ag.key.slice(0,8) + "…" + ag.key.slice(-4);
+      let info = "шлю: провайдер " + ag.provider + " · модель " + agentModelName(ag) + " · ключ " + keyPreview + " (" + ag.key.length + " симв.) · " + PROVIDERS[ag.provider].url;
+      if (ag.provider === "groq" && ag.key.indexOf("gsk_") !== 0) info += " // ключ не похож на groq (gsk_...)";
+      if (ag.provider === "openrouter" && ag.key.indexOf("sk-or-v1-") !== 0) info += " // ключ не похож на openrouter (sk-or-v1-...)";
+      if (ag.provider === "groq" && ag.key.indexOf("gsk_") === 0 && ag.key.length < 50) info += " // ключ обрезан при копировании";
+      if (ag.provider === "openrouter" && ag.key.indexOf("sk-or-v1-") === 0 && ag.key.length < 70) info += " // ключ обрезан при копировании";
+      if (ag.provider === "glm" && (ag.key.indexOf("gsk_") === 0 || ag.key.indexOf("sk-or") === 0)) info += " // в поле GLM лежит чужой ключ — нужен от z.ai";
+      if (ag.provider === "gemini" && ag.key.indexOf("AIza") !== 0) info += " // ключ не похож на gemini (AIza...)";
+      say($("apiMsg"), info);
       try {
-        const r = await brainCall(AGENTS[k], "You are a connection test. Reply with exactly: OK", "ping", 600);
-        say($("apiMsg"), "✓ " + k + " жив: " + agentLabel(AGENTS[k]) + " · " + String(r).slice(0, 40), true);
+        const r = await brainCall(ag, "You are a connection test. Reply with exactly: OK", "ping", 600);
+        say($("apiMsg"), "✓ " + k + " жив: " + agentLabel(ag) + " · " + String(r).slice(0, 40), true);
       } catch(err){
-        let t = k + " не вышел: " + err.message;
-        if (/401|invalid|unauthorized/i.test(err.message)) t += " — ключ неверный или от другого провайдера";
-        if (/429/i.test(err.message)) t += " — лимит частоты, подожди минуту (у gemini-2.5-pro он узкий)";
+        let t = k + " не вышел: " + err.message + " · ушёл ключ " + keyPreview + " (" + ag.key.length + " симв.) на провайдера " + ag.provider;
+        if (/401|invalid|unauthorized|Authentication/i.test(err.message)) t += " — сервер не принял именно этот ключ";
+        if (/429/i.test(err.message)) t += " — лимит частоты, подожди минуту";
         if (/Failed to fetch|NetworkError/i.test(err.message)) t += " — сеть/блокировщик/CORS";
         say($("apiMsg"), t, false);
       }
