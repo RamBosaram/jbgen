@@ -444,7 +444,7 @@ const MODEL_REGISTRY = [
   { id:"ultra",  prov:"openrouter", model:"nvidia/nemotron-3-ultra-550b-a55b:free",
     key:K("sk-or-v1-82f577","406ec038581b5c07","209c210132e58291d","576ba2d0ad8f6abb","689d01ca8"),
     label:"Nemotron Ultra 550B", tag:"ULTRA", ping:1800, fallback:"super" },
-  { id:"gem31",  prov:"openrouter", model:"google/gemma-4-31b:free",
+  { id:"gem31",  prov:"openrouter", model:"google/gemma-4-31b-it:free",
     key:K("sk-or-v1-ced83e04","c7f87a0e4d2b81a2","6b1ef2fcd7177458","6f7c7d475199584b","9b5f134a"),
     label:"Gemma 4 31B", tag:"GEM31", ping:1800, fallback:"gem26" },
   { id:"super",  prov:"openrouter", model:"nvidia/nemotron-3-super-120b-a12b:free",
@@ -1930,4 +1930,4 @@ async function boot(){
 safe("загрузка", () => { boot(); });
 </script>
 </body>
-</html>
+  </html>
