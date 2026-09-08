@@ -467,7 +467,7 @@ async function brainCall(agent, system, user, maxTokens, timeoutMs){
 }
 
 // ---- вызов с ретраями: сетевые чихи и лимиты повторяем, битые ключи нет ----
-const RETRYABLE = /failed to fetch|networkerror|network error|429|502|503|504|aborted|timeout|timed out|load failed|connection/i;
+const RETRYABLE = /failed to fetch|networkerror|network error|429|502|503|504|aborted|timeout|timed out|load failed|connection|rate limit|rate-limit|quota|overloaded|no providers/i;
 async function brainCallRetry(agent, system, user, maxTokens, timeoutMs, key){
   const delays = [6000, 20000];
   let lastErr = null;
@@ -860,7 +860,7 @@ async function ultraGenerate(model, request, isUniv){
 
   // раунд 3: синтез
   progNote("синтез");
-  const synth = slots.find(p => p[0] === "A") || slots[0];
+  const synth = slots.find(p => p[0] === "B") || slots[0];
   let merged = null;
   try {
     const r = await brainCallRetry(synth[1], SYNTH_SYSTEM(), SYNTH_USER(baseUser, drafts, reviews.length ? reviews : drafts.map(d => ({ tag:d.tag, text:"(review missing) " + d.text.slice(0,300) }))), 8192, U, "синтез");
