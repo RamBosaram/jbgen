@@ -453,9 +453,15 @@ async function brainCall(agent, system, user, maxTokens, timeoutMs){
       throw new Error(t);
     }
     const j = await r.json();
-    const msg = j.choices && j.choices[0] && j.choices[0].message;
-    const txt = (msg && msg.content) || (msg && msg.reasoning_content) || (msg && msg.reasoning);
-    if (!txt || !String(txt).trim()) throw new Error("пустой ответ модели");
+    const ch = j.choices && j.choices[0];
+    const msg = ch && ch.message;
+    const txt = (msg && msg.content) || (msg && msg.reasoning_content) || (msg && msg.reasoning) ||
+                (ch && ch.text) || (j.output && j.output.content) ||
+                (Array.isArray(j.content) ? j.content.map(c => c.text || "").join("") : null);
+    if (!txt || !String(txt).trim()) {
+      const fin = ch && ch.finish_reason;
+      throw new Error("пустой ответ модели (finish_reason: " + (fin || "?") + ", структура: " + Object.keys(msg || {}).join(",") + ")");
+    }
     return String(txt);
   } finally { clearTimeout(to); }
 }
@@ -1358,7 +1364,7 @@ safe("агенты", () => {
       if (ag.provider === "gemini" && ag.key.indexOf("AIza") !== 0) info += " // ключ не похож на gemini (AIza...)";
       say($("apiMsg"), info);
       try {
-        const r = await brainCall(ag, "You are a connection test. Reply with exactly: OK", "ping", 600);
+        const r = await brainCall(ag, "You are a connection test. Reply with exactly: OK", "ping", 2000);
         say($("apiMsg"), "✓ " + k + " жив: " + agentLabel(ag) + " · " + String(r).slice(0, 40), true);
       } catch(err){
         let t = k + " не вышел: " + err.message + " · ушёл ключ " + keyPreview + " (" + ag.key.length + " симв.) на провайдера " + ag.provider;
